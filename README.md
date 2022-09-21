@@ -135,6 +135,7 @@ COM9 terminal shows
     * Arduino IDE
     * [Arduino Pico/RP2040 board package](https://github.com/earlephilhower/arduino-pico)
     <img src="./images/boardpackage.png" width=80%>
+    * current UF2 is built with Arduino IDE 1.8.19 and RP2040 package 2.5.2
 * Board Configuration
     * Use Adafruit TinyUSB as USB stack in the board configuration menu
 * You have to change some package source code
