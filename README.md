@@ -146,7 +146,7 @@ in the class Adafruit_USBD_Device in the Adafruit_USBD_Device.h
 # 5.Important Notes
 * UART Baudrate is fixed 115200 bps. if you change it you have to change source code.
 * Use LF or CRLF to send commands to Pico USB console.
-* Capture function is for light debugging perpose. Capturing multiple bridges at the same time can overflows the buffer.
+* Capture function is for light debugging purpose. Capturing multiple bridges at the same time can overflows the buffer.
 
 # 6.ToDo
 * buffered capturing.
