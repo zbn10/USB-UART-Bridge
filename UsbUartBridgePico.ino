@@ -32,7 +32,7 @@ class UsbUartBridge {
     Adafruit_USBD_CDC *usbi;
     Adafruit_USBD_CDC *capture2cons;
 #define CAPMODE_TXT 1
-#define CAPMODE_BIN 2
+#define CAPMODE_HEX 2
     int capturemode;
     void _init(char *, Adafruit_USBD_CDC *, int);
 
@@ -54,8 +54,8 @@ class UsbUartBridge {
 int UsbUartBridge::setCapMode(int mode) {
   capturemode = 0;
   if(mode & CAPMODE_TXT) capturemode |= CAPMODE_TXT;
-  if(mode & CAPMODE_BIN) capturemode |= CAPMODE_BIN;
-  if(capturemode == 0) capturemode = CAPMODE_BIN;
+  if(mode & CAPMODE_HEX) capturemode |= CAPMODE_HEX;
+  if(capturemode == 0) capturemode = CAPMODE_HEX;
   return(capturemode);
 }
 
@@ -85,7 +85,7 @@ void UsbUartBridge::_init(char *descr, Adafruit_USBD_CDC *usbi, int baud) {
   uartp = NULL;
   this->usbi = usbi;
   capture2cons = NULL;
-  capturemode = CAPMODE_BIN;
+  capturemode = CAPMODE_HEX;
 }
 
 void UsbUartBridge::init(char *descr, Adafruit_USBD_CDC *usbi, SerialPIO *uart, int baud) {
@@ -103,61 +103,6 @@ void UsbUartBridge::init(char *descr, Adafruit_USBD_CDC *usbi, SerialUART *uart,
   uarts->begin(baud);
   usbi->begin(115200);
 }
-
-/*
-#define UUB_UART_AVAILABLE(o) (o->uarts ? o->uarts->available() : o->uartp->available())
-#define UUB_UART_READBYTES(o, buf, len) (o->uarts ? o->uarts->readBytes(buf, len) : o->uartp->readBytes(buf, len))
-#define UUB_UART_WRITE(o, buf, len) (o->uarts ? o->uarts->write(buf, len) : o->uartp->write(buf, len))
-#define UUB_UART_FLUSH(o) (o->uarts ? o->uarts->flush() : o->uartp->flush())
-void UsbUartBridge::transmit(void) {
-  int len;
-  char buf[READBUFSIZE + 1];
-
-  if((len = UUB_UART_AVAILABLE(this)) > 0) {
-    len = MIN(len, READBUFSIZE);
-    UUB_UART_READBYTES(this, buf, len);
-    usbi->write(buf, len);
-    usbi->flush();
-    uart2usb_cnt += len;
-
-    if(capture2cons) {
-      buf[len] = '\0';
-      if(capturemode & CAPMODE_TXT) {
-        capture2cons->printf("%s (uart->usb txt): %s\n", descr, buf);
-      }
-      if(capturemode & CAPMODE_BIN) {
-        capture2cons->printf("%s (uart->usb hex): ", descr);
-        for(int i = 0; i < len; i++) {
-          capture2cons->printf("%02x ", buf[i]);
-        }
-        capture2cons->println();
-      }
-    }
-  }
-
-  if((len = usbi->available()) > 0) {
-    len = MIN(len, READBUFSIZE);
-    usbi->readBytes(buf, len);
-    UUB_UART_WRITE(this, buf, len);
-    UUB_UART_FLUSH(this);
-    usb2uart_cnt += len;
-
-    if(capture2cons) {
-      buf[len] = '\0';
-      if(capturemode & CAPMODE_TXT) {
-        capture2cons->printf("%s (usb->uart txt): %s\n", descr, buf);
-      }
-      if(capturemode & CAPMODE_BIN) {
-        capture2cons->printf("%s (usb->uart hex): ", descr);
-        for(int i = 0; i < len; i++) {
-          capture2cons->printf("%02x ", buf[i]);
-        }
-        capture2cons->println();
-      }
-    }
-  }
-}
-*/
 
 #define UUB_UART_AVAILABLE(o) (o->uarts ? o->uarts->available() : o->uartp->available())
 #define UUB_UART_READ(o) (o->uarts ? o->uarts->read() : o->uartp->read())
@@ -185,7 +130,7 @@ void UsbUartBridge::transmit(void) {
           if(capturemode & CAPMODE_TXT) {
             capture2cons->printf("%s (uart->usb txt): %c\n", descr, c);
           }
-          if(capturemode & CAPMODE_BIN) {
+          if(capturemode & CAPMODE_HEX) {
             capture2cons->printf("%s (uart->usb hex): %02x\n", descr, c);
           }
         }
@@ -205,7 +150,7 @@ void UsbUartBridge::transmit(void) {
           if(capturemode & CAPMODE_TXT) {
             capture2cons->printf("%s (usb->uart txt): %c\n", descr, c);
           }
-          if(capturemode & CAPMODE_BIN) {
+          if(capturemode & CAPMODE_HEX) {
             capture2cons->printf("%s (usb->uart hex): %02x\n", descr, c);
           }
         }
@@ -471,7 +416,7 @@ void loop() {
             capmode = UUB[i].getCapMode();
             Serial.printf("  %-13s | % 7d | %-7s | %-3s %-3s | % 10d | % 10d\n",
               UUB[i].getDescr(), UUB[i].getBaud(), (UUB[i].getCapture() ? "on" : "off"),
-              (capmode & CAPMODE_TXT ? "TXT" : ""), (capmode & CAPMODE_BIN ? "BIN" : ""),
+              (capmode & CAPMODE_TXT ? "TXT" : ""), (capmode & CAPMODE_HEX ? "HEX" : ""),
               UUB[i].getUsb2Uart(), UUB[i].getUart2Usb());
           }
 
@@ -493,7 +438,7 @@ void loop() {
           Serial.println("  cap num           : enable capture for bridge<n>");
           Serial.println("  uncap num         : disable capture for bridge<num>");
           Serial.println("  capmode num mode  : set capture mode for bridge<num> to <mode>");
-          Serial.println("                    : mode: 1=TXT, 2=BIN, 3=TXT&BIN");
+          Serial.println("                    : mode: 1=TXT, 2=HEX, 3=TXT&HEX");
           Serial.println("  clear {num | all} : clear bytes count");
           Serial.println("  help              : print this help");
 
