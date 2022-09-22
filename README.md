@@ -63,7 +63,7 @@ Usage:
   cap num           : enable capture for bridge<n>
   uncap num         : disable capture for bridge<num>
   capmode num mode  : set capture mode for bridge<num> to <mode>
-                    : mode: 1=TXT, 2=BIN, 3=TXT&BIN
+                    : mode: 1=TXT, 2=HEX, 3=TXT&HEX
   clear {num | all} : clear bytes count
   help              : print this help
 ```
@@ -80,11 +80,11 @@ Cpature mode:
 Show:
   bridge        |  baudrt | capture | capmode |  usb->uart |  uart->usb
   B0 (GP0/1)    |  115200 | on      | TXT     |          0 |          0
-  B1 (GP4/5)    |  115200 | off     |     BIN |          0 |          0
-  B2 (GP8/9)    |  115200 | off     |     BIN |          0 |          0
-  B3 (GP12/13)  |  115200 | off     |     BIN |          0 |          0
-  B4 (GP16/17)  |  115200 | off     |     BIN |          0 |          0
-  B5 (GP20/21)  |  115200 | off     |     BIN |          0 |          0
+  B1 (GP4/5)    |  115200 | off     |     HEX |          0 |          0
+  B2 (GP8/9)    |  115200 | off     |     HEX |          0 |          0
+  B3 (GP12/13)  |  115200 | off     |     HEX |          0 |          0
+  B4 (GP16/17)  |  115200 | off     |     HEX |          0 |          0
+  B5 (GP20/21)  |  115200 | off     |     HEX |          0 |          0
 ```
 ## 3.3.capture 'Hello World !'
 Run sample MicroPython Program at the DeviceA

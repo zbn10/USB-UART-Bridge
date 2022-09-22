@@ -31,6 +31,11 @@ class UsbUartBridge {
     SerialPIO *uartp;
     Adafruit_USBD_CDC *usbi;
     Adafruit_USBD_CDC *capture2cons;
+//#define CAPBUFSIZE 128
+//    char capbuf_usb2uart[CAPBUFSIZE];
+//    char capbuf_uart2usb[CAPBUFSIZE];
+//    int capbuf_usb2uart_p;
+//    int capbuf_uart2usb_p;
 #define CAPMODE_TXT 1
 #define CAPMODE_HEX 2
     int capturemode;
