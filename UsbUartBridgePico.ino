@@ -1,4 +1,3 @@
-
 #include <SerialPIO.h>
 #include <Adafruit_TinyUSB.h>
 
@@ -20,6 +19,76 @@ class Adafruit_USBD_Device {
 #define CMDLINE_CHAR_MAX 100
 #define CMDLINE_ARGC_MAX 5
 
+class Ascii {
+  private:
+    static char asciistr[255][5];
+    static int initialized;
+  public:
+    static void Init(void);
+    static char *Str(unsigned char);
+    static unsigned char Chr(char *);
+};
+
+char Ascii::asciistr[255][5] = {
+    "\\0",  "\\SOH",  "\\STX",  "\\ETX",
+    "\\EOT",  "\\ENQ",  "\\ACK",  "\\a",
+    "\\b",    "\\t",    "\\n",    "\\v",
+    "\\f",    "\\r",    "\\SO",   "\\SI",
+    "\\DLE",  "\\DC1",  "\\DC2",  "\\DC3",
+    "\\DC4",  "\\NAK",  "\\SYN",  "\\ETB",
+    "\\CAN",  "\\EM",   "\\SUB",  "\\ESC",
+    "\\FS",   "\\GS",   "\\RS",   "\\US"
+};
+int Ascii::initialized = 0;
+
+void Ascii::Init(void) {
+  for(int i = 0x20; i <0x100; i++) {
+    asciistr[i][0] = i;
+    asciistr[i][1] = '\0';
+  }
+  strcpy(&asciistr[0x7f][0], "\\DEL");
+
+  initialized = 1;
+}
+
+char *Ascii::Str(unsigned char code) {
+  if(!initialized || code < 0 || code > 255) return(NULL);
+  return(asciistr[code]);
+}
+
+unsigned char Ascii::Chr(char *str) {
+  unsigned char d;
+
+  if(str[0] == '\\' && str[1] != '\0') {
+    switch(str[1]) {
+      case '0':
+        d = '\0';
+        break;
+      case 'b':
+        d = '\b';
+        break;
+      case 't':
+        d = '\t';
+        break;
+      case 'n':
+        d = '\n';
+        break;
+      case 'v':
+        d = '\v';
+        break;
+      case 'f':
+        d = '\f';
+        break;
+      case 'r':
+        d = '\r';
+        break;
+    }
+  } else {
+    d = (unsigned char)str[0];
+  }
+
+  return(d);
+}
 
 class UsbUartBridge {
   private:
@@ -30,16 +99,22 @@ class UsbUartBridge {
     SerialUART *uarts;
     SerialPIO *uartp;
     Adafruit_USBD_CDC *usbi;
-    Adafruit_USBD_CDC *capture2cons;
-//#define CAPBUFSIZE 128
-//    char capbuf_usb2uart[CAPBUFSIZE];
-//    char capbuf_uart2usb[CAPBUFSIZE];
-//    int capbuf_usb2uart_p;
-//    int capbuf_uart2usb_p;
+    Adafruit_USBD_CDC *cap2cons;
 #define CAPMODE_TXT 1
 #define CAPMODE_HEX 2
-    int capturemode;
+    int capmode;
+#define CAPBUFSIZE 128
+    unsigned char capbuf_usb2uart[CAPBUFSIZE];
+    unsigned char capbuf_uart2usb[CAPBUFSIZE];
+    unsigned int capbuf_usb2uart_p;
+    unsigned int capbuf_uart2usb_p;
+    unsigned long capbuf_usb2uart_last;
+    unsigned long capbuf_uart2usb_last;
+    unsigned char cap_delim;
     void _init(char *, Adafruit_USBD_CDC *, int);
+    void _capture(unsigned char *);
+    void _capture(int, unsigned char *, unsigned int *, unsigned long *, const char *);
+    void _capture_flush(unsigned char *, unsigned int *, unsigned long *, const char *);
 
   public:
     void init(char *, Adafruit_USBD_CDC *, SerialUART *, int);
@@ -54,18 +129,34 @@ class UsbUartBridge {
     void clearCnt(void);
     int setCapMode(int);
     int getCapMode(void);
+    void initCapture(void);
+    void setCapDelim(unsigned char);
+    unsigned char getCapDelim();
 };
 
+void UsbUartBridge::setCapDelim(unsigned char c) {
+  cap_delim = c;
+}
+
+unsigned char UsbUartBridge::getCapDelim() {
+  return(cap_delim);
+}
+
 int UsbUartBridge::setCapMode(int mode) {
-  capturemode = 0;
-  if(mode & CAPMODE_TXT) capturemode |= CAPMODE_TXT;
-  if(mode & CAPMODE_HEX) capturemode |= CAPMODE_HEX;
-  if(capturemode == 0) capturemode = CAPMODE_HEX;
-  return(capturemode);
+  capmode = 0;
+  if(mode & CAPMODE_TXT) capmode |= CAPMODE_TXT;
+  if(mode & CAPMODE_HEX) capmode |= CAPMODE_HEX;
+  if(capmode == 0) capmode = CAPMODE_HEX;
+  return(capmode);
+}
+
+void UsbUartBridge::initCapture(void) {
+  capbuf_usb2uart_p = 0;
+  capbuf_uart2usb_p = 0;
 }
 
 int UsbUartBridge::getCapMode(void) {
-  return(capturemode);
+  return(capmode);
 }
 
 void UsbUartBridge::clearCnt(void) {
@@ -84,13 +175,16 @@ char *UsbUartBridge::getDescr(void) {
 void UsbUartBridge::_init(char *descr, Adafruit_USBD_CDC *usbi, int baud) {
   this->descr = descr;
   this->baud = baud;
-  usb2uart_cnt = 0;
-  uart2usb_cnt = 0;
   uarts = NULL;
   uartp = NULL;
   this->usbi = usbi;
-  capture2cons = NULL;
-  capturemode = CAPMODE_HEX;
+
+  clearCnt();
+
+  cap_delim = '\n';
+  cap2cons = NULL;
+  capmode = CAPMODE_HEX;
+  initCapture();
 }
 
 void UsbUartBridge::init(char *descr, Adafruit_USBD_CDC *usbi, SerialPIO *uart, int baud) {
@@ -109,6 +203,65 @@ void UsbUartBridge::init(char *descr, Adafruit_USBD_CDC *usbi, SerialUART *uart,
   usbi->begin(115200);
 }
 
+void UsbUartBridge::_capture(int c, unsigned char *buf, unsigned int *buf_pp,
+  unsigned long *tm_p, const char *dir) {
+
+  int pushout = 0;
+  buf[(*buf_pp)++] = c;
+
+  if(*buf_pp == 1) {
+    *tm_p  = millis();
+  }
+
+  if((capmode & CAPMODE_TXT) && (buf[(*buf_pp)-1] == cap_delim || *buf_pp == CAPBUFSIZE)) {
+    cap2cons->printf("%s (%s txt):", descr, dir);
+    for(int i = 0; i < (*buf_pp); i++) {
+      cap2cons->printf("%s", Ascii::Str(buf[i]));
+    }
+    cap2cons->printf("\n");
+
+    pushout = 1;
+  }
+
+  if((capmode & CAPMODE_HEX) &&
+    (pushout || (!(capmode & CAPMODE_TXT) && (*buf_pp) == MIN(16, CAPBUFSIZE)))) {
+
+    cap2cons->printf("%s (%s hex):", descr, dir);
+    for(int i = 0; i < (*buf_pp); i++) {
+      cap2cons->printf(" %02x", buf[i]);
+    }
+    cap2cons->printf("\n");
+
+    pushout = 1;
+  }
+
+  if(pushout) (*buf_pp) = 0;
+}
+
+void UsbUartBridge::_capture_flush(unsigned char *buf, unsigned int *buf_pp,
+  unsigned long *tm_p, const char *dir) {
+
+  if(millis() - (*tm_p) > 1000) { // correct even if millis() overflow
+    if(capmode & CAPMODE_TXT) {
+      cap2cons->printf("%s (%s txt):", descr, dir);
+      for(int i = 0; i < (*buf_pp); i++) {
+        cap2cons->printf("%s", Ascii::Str(buf[i]));
+      }
+      cap2cons->printf("\n");
+    }
+
+    if(capmode & CAPMODE_HEX) {
+      cap2cons->printf("%s (%s hex):", descr, dir);
+      for(int i = 0; i < (*buf_pp); i++) {
+        cap2cons->printf("%02x ", buf[i]);
+      }
+      cap2cons->printf("\n");
+    }
+
+    (*buf_pp) = 0;
+  }
+}
+
 #define UUB_UART_AVAILABLE(o) (o->uarts ? o->uarts->available() : o->uartp->available())
 #define UUB_UART_READ(o) (o->uarts ? o->uarts->read() : o->uartp->read())
 #define UUB_UART_WRITE(o, c) (o->uarts ? o->uarts->write(c) : o->uartp->write(c))
@@ -116,6 +269,7 @@ void UsbUartBridge::init(char *descr, Adafruit_USBD_CDC *usbi, SerialUART *uart,
 void UsbUartBridge::transmit(void) {
   int len, c;
   char buf[READBUFSIZE + 1];
+  unsigned long curtime;
 
   if((len = UUB_UART_AVAILABLE(this)) > 0) {
     while(len--) {
@@ -131,17 +285,16 @@ void UsbUartBridge::transmit(void) {
         usbi->flush();
         uart2usb_cnt++;
 
-        if(capture2cons) {
-          if(capturemode & CAPMODE_TXT) {
-            capture2cons->printf("%s (uart->usb txt): %c\n", descr, c);
-          }
-          if(capturemode & CAPMODE_HEX) {
-            capture2cons->printf("%s (uart->usb hex): %02x\n", descr, c);
-          }
+        if(cap2cons) {
+          _capture(c, capbuf_uart2usb, &capbuf_uart2usb_p, &capbuf_uart2usb_last, "uart->usb");
         }
       }
     }
   }
+  if(cap2cons && capbuf_uart2usb_p) {
+    _capture_flush(capbuf_uart2usb, &capbuf_uart2usb_p, &capbuf_uart2usb_last, "uart->usb");
+  }
+
 
   if((len = usbi->available()) > 0) {
     while(len--) {
@@ -151,25 +304,23 @@ void UsbUartBridge::transmit(void) {
         UUB_UART_FLUSH(this);
         usb2uart_cnt++;
 
-        if(capture2cons) {
-          if(capturemode & CAPMODE_TXT) {
-            capture2cons->printf("%s (usb->uart txt): %c\n", descr, c);
-          }
-          if(capturemode & CAPMODE_HEX) {
-            capture2cons->printf("%s (usb->uart hex): %02x\n", descr, c);
-          }
+        if(cap2cons) {
+          _capture(c, capbuf_usb2uart, &capbuf_usb2uart_p, &capbuf_usb2uart_last, "usb->uart");
         }
       }
     }
   }
+  if(cap2cons && capbuf_usb2uart_p) {
+    _capture_flush(capbuf_usb2uart, &capbuf_usb2uart_p, &capbuf_usb2uart_last, "usb->uart");
+  }
 }
 
 void UsbUartBridge::setCapture(Adafruit_USBD_CDC *serial) {
-  capture2cons = serial;
+  cap2cons = serial;
 }
 
 Adafruit_USBD_CDC *UsbUartBridge::getCapture(void) {
-  return(capture2cons);
+  return(cap2cons);
 }
 
 unsigned int UsbUartBridge::getUsb2Uart(void) {
@@ -198,7 +349,7 @@ class CliParser {
     int getArgc(void);
     int getArgv(int);
     int getArgv(int, char*, int);
-    int argvCmp(int, char *);
+    int argvCmp(int, const char *);
     void debugPrint(Adafruit_USBD_CDC *);
 };
 
@@ -245,9 +396,9 @@ CliParser::CliParser(int argcmax, int cmdlinemax) {
   this->cmdlinemax = cmdlinemax;
 }
 
-int CliParser::argvCmp(int n, char *buf) {
+int CliParser::argvCmp(int n, const char *str) {
   if(n < 0 || n > argc) return(-1);
-  return(strcmp(argv[n], buf));
+  return(strcmp(argv[n], str));
 }
 
 void CliParser::initCmdStr(void) {
@@ -325,10 +476,10 @@ int CliParser::getArgv(int n, char *buf, int buflen) {
 
   len = strlen(argv[n]);
   if(buflen >= len + 1) {
-    strncpy(buf, argv[n], len+1);
+    memcpy(buf, argv[n], len+1);
     return(1);
   } else {
-    strncpy(buf, argv[n], buflen - 1);
+    memcpy(buf, argv[n], buflen - 1);
     buf[buflen] = '\0';
     return(0);
   }
@@ -365,6 +516,8 @@ void setup() {
   UUB[3].init((char *)"B3 (GP12/13)", &USB4, &Serial4, 115200);
   UUB[4].init((char *)"B4 (GP16/17)", &USB5, &Serial5, 115200);
   UUB[5].init((char *)"B5 (GP20/21)", &USB6, &Serial6, 115200);
+
+  Ascii::Init();
 }
 
 void loop() {
@@ -397,6 +550,7 @@ void loop() {
           if(n >= 0 && n < UUB_MAX) {
             Serial.printf("  disable for %s\n", UUB[n].getDescr());
             UUB[n].setCapture(NULL);
+            UUB[n].initCapture();
           } else {
             Serial.printf("  invalid serial port number %d\n", n);
           }
@@ -408,21 +562,47 @@ void loop() {
           if(n >= 0 && n < UUB_MAX) {
             mode = UUB[n].setCapMode(mode);
             Serial.printf("  %s capture mode to %d\n", UUB[n].getDescr(), mode);
+            UUB[n].initCapture();
+          } else {
+            Serial.printf("  invalid serial port number %d\n", n);
+          }
+
+        } else if(cli.argvCmp(0, "capdelim") ==0 && argc > 2) {
+          Serial.println("Capture Delimiter:");
+          char dstr[3];
+
+          int n = cli.getArgv(1);
+          cli.getArgv(2, dstr, sizeof(dstr));
+
+          if(n >= 0 && n < UUB_MAX) {
+            unsigned char d;
+            if(dstr[0] >= '0' && dstr[0] <= '9') {
+              d = (char)cli.getArgv(2);
+            } else {
+              d = Ascii::Chr(dstr);
+            }
+            Serial.printf("  %s cap delim %s(%d)\n", UUB[n].getDescr(), Ascii::Str(d), d);
+            UUB[n].setCapDelim(d);
+            UUB[n].initCapture();
           } else {
             Serial.printf("  invalid serial port number %d\n", n);
           }
 
         } else if(cli.argvCmp(0, "show") == 0) {
           Serial.println("Show:");
-          Serial.printf("  %-13s | %7s | %-7s | %-7s | %10s | %10s\n",
-            "bridge", "baudrt", "capture", "capmode", "usb->uart", "uart->usb");
+          Serial.printf("  %-13s | %7s | %-7s | %-7s | %-9s | %10s | %10s\n",
+            "bridge", "baudrt", "capture",
+            "capmode",
+            "capdelim", "usb->uart", "uart->usb");
           int capmode;
+          unsigned char delim;
           for(int i = 0; i < UUB_MAX; i++) {
             capmode = UUB[i].getCapMode();
-            Serial.printf("  %-13s | % 7d | %-7s | %-3s %-3s | % 10d | % 10d\n",
+            delim = UUB[i].getCapDelim();
+            Serial.printf("  %-13s | % 7d | %-7s | %-3s %-3s | %-4s(% 3d) | % 10d | % 10d\n",
               UUB[i].getDescr(), UUB[i].getBaud(), (UUB[i].getCapture() ? "on" : "off"),
               (capmode & CAPMODE_TXT ? "TXT" : ""), (capmode & CAPMODE_HEX ? "HEX" : ""),
-              UUB[i].getUsb2Uart(), UUB[i].getUart2Usb());
+              Ascii::Str(delim), delim, UUB[i].getUsb2Uart(), UUB[i].getUart2Usb());
           }
 
         } else if(cli.argvCmp(0, "clear") == 0 && argc > 1) {
@@ -439,13 +619,17 @@ void loop() {
 
         } else if(cli.argvCmp(0, "help") == 0){
           Serial.println("Usage: ");
-          Serial.println("  show              : show current parameters");
-          Serial.println("  cap num           : enable capture for bridge<n>");
-          Serial.println("  uncap num         : disable capture for bridge<num>");
-          Serial.println("  capmode num mode  : set capture mode for bridge<num> to <mode>");
-          Serial.println("                    : mode: 1=TXT, 2=HEX, 3=TXT&HEX");
-          Serial.println("  clear {num | all} : clear bytes count");
-          Serial.println("  help              : print this help");
+          Serial.println("  show             : show current parameters");
+          Serial.println("  cap num          : enable capture for bridge<n>");
+          Serial.println("  uncap num        : disable capture for bridge<num>");
+          Serial.println("  capmode num mode : set capture mode for bridge<num> to <mode>");
+          Serial.println("                   : mode: 1=TXT, 2=HEX, 3=TXT&HEX");
+          Serial.println("  capdelim num chr : set TXT capture delimiter for bridge<num>");
+          Serial.println("                   : chr: decimal number from 0 to 255 or");
+          Serial.println("                   :      \\0,\\b,\\t,\\n(default),\\v,\\f,\\r, or");
+          Serial.println("                   :      signle character");
+          Serial.println("  clear {num | all}: clear bytes count");
+          Serial.println("  help             : print this help");
 
         } else {
           // just echo

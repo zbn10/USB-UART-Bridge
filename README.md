@@ -50,9 +50,14 @@ I changed COM port FriendlyName in the Registry at my own risk to escape from pa
 |USB-UART Bridge 5|20/21|
 
 # 3.Example
-* PC(COM9) ---[Bridge0 USB]--- Pico ---[Bridge0 UART]--- DeviceA  
-                            |
-* PC(COM7) ---[Pico cons]----
+The environment
+```mermaid
+graph LR;
+    1(PC)<-.->|COM9/Bridge0 USB|2(USB-UART-Bridge/Pico);
+    1<-.->|COM7/Pico console|2;
+    2<-.->|Bridge0 UART|3(DeviceA);
+```
+
 ## 3.1.'help' at USB console
 Type 'help' at COM7 terminal.
 This is vscode SERIAL MONITOR example.
@@ -78,17 +83,17 @@ Cpature mode:
   B0 (GP0/1) capture mode to 1
 ---- Sent message: "show\n" ----
 Show:
-  bridge        |  baudrt | capture | capmode |  usb->uart |  uart->usb
-  B0 (GP0/1)    |  115200 | on      | TXT     |          0 |          0
-  B1 (GP4/5)    |  115200 | off     |     HEX |          0 |          0
-  B2 (GP8/9)    |  115200 | off     |     HEX |          0 |          0
-  B3 (GP12/13)  |  115200 | off     |     HEX |          0 |          0
-  B4 (GP16/17)  |  115200 | off     |     HEX |          0 |          0
-  B5 (GP20/21)  |  115200 | off     |     HEX |          0 |          0
+  bridge        |  baudrt | capture | capmode | capdelim  |  usb->uart |  uart->usb
+  B0 (GP0/1)    |  115200 | off     | TXT     | \n  ( 10) |        474 |      85463
+  B1 (GP4/5)    |  115200 | off     |     HEX | \n  ( 10) |          0 |       8261
+  B2 (GP8/9)    |  115200 | off     |     HEX | \n  ( 10) |          0 |          0
+  B3 (GP12/13)  |  115200 | off     |     HEX | \n  ( 10) |          0 |          0
+  B4 (GP16/17)  |  115200 | off     |     HEX | \n  ( 10) |          0 |          0
+  B5 (GP20/21)  |  115200 | off     |     HEX | \n  ( 10) |          0 |          0
 ```
 ## 3.3.capture 'Hello World !'
 Run sample MicroPython Program at the DeviceA
-```
+```python
 import time
 from machine import UART,Pin
 
@@ -97,28 +102,15 @@ i = 0
 while True:
     u.write(str(i))
     i += 1
-    u.write(' hello World !\n')
+    u.write(' Hello World !\n')
 
     time.sleep(1)
 ```
 Then the Bridge captures them at COM7
 ```
-B0 (GP0/1) (uart->usb txt): 0
-B0 (GP0/1) (uart->usb txt):  
-B0 (GP0/1) (uart->usb txt): h
-B0 (GP0/1) (uart->usb txt): e
-B0 (GP0/1) (uart->usb txt): l
-B0 (GP0/1) (uart->usb txt): l
-B0 (GP0/1) (uart->usb txt): o
-B0 (GP0/1) (uart->usb txt):  
-B0 (GP0/1) (uart->usb txt): W
-B0 (GP0/1) (uart->usb txt): o
-B0 (GP0/1) (uart->usb txt): r
-B0 (GP0/1) (uart->usb txt): l
-B0 (GP0/1) (uart->usb txt): d
-B0 (GP0/1) (uart->usb txt):  
-B0 (GP0/1) (uart->usb txt): !
-B0 (GP0/1) (uart->usb txt): 
+B0 (GP0/1) (uart->usb txt):0 Hello World !\n
+B0 (GP0/1) (uart->usb txt):1 Hello World !\n
+B0 (GP0/1) (uart->usb txt):2 Hello World !\n
 ...
 ```
 COM9 terminal shows
@@ -126,7 +118,6 @@ COM9 terminal shows
 0 hello World !
 1 hello World !
 2 hello World !
-3 hello World !
 ...
 ```
 
@@ -150,8 +141,28 @@ in the class Adafruit_USBD_Device in the Adafruit_USBD_Device.h
 * Use LF or CRLF to send commands to Pico USB console.
 * Capture function is for light debugging purpose. Capturing multiple bridges at the same time can overflows the buffer.
 
-# 6.ToDo
-* buffered capturing.
+# 6.Command Details
+## 6.1.cap / uncap
+* Enable / Disable capture on each bridge.
+* bi-directional data streams are captured simultaneously.
+
+## 6.2.capmode
+* Captured data is displayed in TEXT, HEX or TEXT&HEX.
+* If you choose TEXT mode and data stream contains bytes which numbers is greater than 127, the text could be unreadable. Control characters less than 128 are translated readable strings.
+* In HEX mode, the data column is divided into 16 byte units and displayed. data less than 16 bytes will be displayed 1 second after being received.
+* In TEXT mode and TEXT&HEX mode, the data is divided by delimiter. 
+If a text column exceeds buffer size, the text column is divided into buffer size units.
+
+## 6.3.capdelim
+* You can specify the delimiter which is a character byte.
+* There are three ways to specify.
+    1. A number from 0 to 255.
+    1. A special character \0 \b \t \n \v \f or \r.
+    1. A character such as /.
+* If you wanna specify SPACE character, use number 32.
+
+# 7.ToDo
 * triggered capturing
 * rewriting data stream
+* UART-UART Bridging and capturing by USB
 * and so on..
